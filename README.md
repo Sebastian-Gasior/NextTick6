@@ -156,7 +156,7 @@ Führen Sie die Tests aus mit:
 pytest ml4t_project/tests/ -v
 ```
 
-![ML4T Trading Dashboard](ml4t_project\project-images\ML4T-Trading-Dashboard.png)
+![ML4T Trading Dashboard](ml4t_project/project-images/ML4T-Trading-Dashboard.png)
 
 **ML4T Trading Dashboard**
 - Kursverlauf und Signale
