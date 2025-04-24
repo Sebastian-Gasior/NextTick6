@@ -1,0 +1,14 @@
+monitoring:
+  enabled: true
+  log_level: INFO
+  check_interval_seconds: 60
+  metrics_retention_days: 30
+  log_dir: logs
+  metrics_dir: metrics
+  thresholds:
+    cpu_usage: 80.0
+    memory_usage: 80.0
+    gpu_usage: 80.0
+    disk_usage: 80.0
+    latency: 1.0
+    error_rate: 0.01 

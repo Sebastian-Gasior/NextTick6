@@ -1,0 +1,15 @@
+# Konfiguration für die Datenmigration
+migration:
+  initial_real_data_ratio: 0.0  # Startanteil echter Daten
+  increment_step: 0.1          # Schrittweise Erhöhung
+  max_ratio: 1.0              # Maximaler Anteil echter Daten
+  validation_threshold: 0.95   # Mindestgenauigkeit für Validierung
+
+performance:
+  max_processing_time_ms: 1000  # Maximale Verarbeitungszeit
+  max_memory_usage_mb: 2048     # Maximaler Speicherverbrauch
+  min_accuracy: 0.85            # Minimale Genauigkeit
+
+data:
+  batch_size: 1000              # Größe der Datenbatches
+  validation_size: 0.2          # Anteil Validierungsdaten 

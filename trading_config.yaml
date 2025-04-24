@@ -1,0 +1,28 @@
+symbols:
+  - AAPL    # Apple
+  - MSFT    # Microsoft
+  - GOOGL   # Google
+  - NVDA    # NVIDIA
+  - TSLA    # Tesla
+
+date_range:
+  start: '2022-01-01'
+  end: '2024-01-01'
+
+analysis_settings:
+  use_gpu: true
+  indicators:
+    - RSI
+    - MACD
+    - BB
+    - EMA
+    - ATR
+  ml_models:
+    - LSTM
+    - GRU
+  
+trading_settings:
+  initial_capital: 100000
+  position_size: 0.1  # 10% des Kapitals pro Position
+  stop_loss: 0.02    # 2% Stop-Loss
+  take_profit: 0.05  # 5% Take-Profit 

@@ -1,0 +1,47 @@
+groups:
+- name: ml4t_alerts
+  rules:
+  - alert: HighCPUUsage
+    expr: cpu_usage > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Hohe CPU-Auslastung"
+      description: "CPU-Auslastung ist über 80% für 5 Minuten"
+
+  - alert: HighMemoryUsage
+    expr: memory_usage > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Hohe Speicherauslastung"
+      description: "Speicherauslastung ist über 80% für 5 Minuten"
+
+  - alert: HighGPUUsage
+    expr: gpu_usage > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Hohe GPU-Auslastung"
+      description: "GPU-Auslastung ist über 80% für 5 Minuten"
+
+  - alert: HighDiskUsage
+    expr: disk_usage > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Hohe Festplattenauslastung"
+      description: "Festplattenauslastung ist über 80% für 5 Minuten"
+
+  - alert: HighErrorRate
+    expr: error_rate > 5
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Hohe Fehlerrate"
+      description: "Fehlerrate ist über 5% für 5 Minuten" 

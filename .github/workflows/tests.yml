@@ -1,0 +1,43 @@
+name: ML4T Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Python ${{ matrix.python-version }} Setup
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: UV Installation
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        uv venv .venv
+        source .venv/bin/activate
+        
+    - name: Dependencies Installation
+      run: |
+        uv pip install -r requirements.txt
+        uv pip install pytest pytest-cov pytest-mock
+        
+    - name: Run Tests
+      run: |
+        pytest tests/ --cov=ml4t_project --cov-report=xml
+        
+    - name: Upload Coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: true 
