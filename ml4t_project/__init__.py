@@ -1,5 +1,5 @@
 """
-ML4T - Machine Learning for Trading
+ML4T Trading System
 """
 
 __version__ = '0.1.0' 

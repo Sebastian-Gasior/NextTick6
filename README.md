@@ -1,6 +1,17 @@
-# NextTick6 - Trading System
+# NextTick6 - Trading System v0.8.21
 
 Ein fortschrittliches System zur Analyse von Handelsdaten und Generierung von Handelssignalen mit maschinellem Lernen.
+
+![ML4T Trading Dashboard](ml4t_project/project-images/ML4T-Trading-Dashboard2.png)
+
+## 📝 GitHub Description
+NextTick6 ist ein hochmodernes Trading-System (v0.8.21) mit LSTM-basierter Preisvorhersage, technischer Analyse und Echtzeit-Signalgenerierung. Features:
+- Echtzeit-Marktdatenanalyse mit yfinance
+- LSTM-Modell für Preisvorhersagen
+- Technische Indikatoren (MA, RSI, MACD, Bollinger)
+- Interaktives Dash-Dashboard
+- Verteiltes Training & GPU-Optimierung
+- Automatisierte Tests & Monitoring
 
 ## 🔄 Projekt-Pipeline (Phasen)
 
@@ -155,18 +166,6 @@ Führen Sie die Tests aus mit:
 ```bash
 pytest ml4t_project/tests/ -v
 ```
-
-![ML4T Trading Dashboard](ml4t_project/project-images/ML4T-Trading-Dashboard.png)
-
-**ML4T Trading Dashboard**
-- Kursverlauf und Signale
-- Marktanalyse
-- LSTM-Vorhersage
-- Technische Indikatoren
-- Performance-Metriken
-- Aktuelle Handelssignale
-- Detaillierte LSTM-Vorhersage
-
 
 ## Priorisierte Aufgabenliste zur Realisierung der Aktienvorhersage
 

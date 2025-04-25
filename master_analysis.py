@@ -15,7 +15,7 @@ import numpy as np
 from ml4t_project.monitoring.dashboard import MonitoringDashboard
 from ml4t_project.data.market_data import MarketData
 from ml4t_project.analysis.market_analyzer import MarketAnalyzer
-from ml4t_project.visualization.show_chart import get_lstm_predictions
+from ml4t_project.visualization.show_chart import get_lstm_predictions, create_chart_for_dashboard
 
 # Logging Setup
 logging.basicConfig(
@@ -51,6 +51,7 @@ class TradingAnalysis:
             "ml4t_project/exports",
             "ml4t_project/exports/analysis",
             "ml4t_project/exports/charts",
+            "ml4t_project/exports/predictions",
             "logs"
         ]
         for d in dirs:
@@ -115,9 +116,36 @@ class TradingAnalysis:
                         predictions = get_lstm_predictions(df)
                         
                         # Speichere Vorhersagen
-                        predictions_file = Path(f"ml4t_project/exports/lstm_predictions_{symbol}.npy")
+                        predictions_file = Path(f"ml4t_project/exports/predictions/lstm_predictions_{symbol}.npy")
                         np.save(predictions_file, predictions)
                         logger.info(f"LSTM-Vorhersagen für {symbol} generiert und gespeichert")
+                        
+                        # Generiere Charts
+                        logger.info(f"Generiere Charts für {symbol}...")
+                        
+                        # Normaler Chart
+                        fig = create_chart_for_dashboard(
+                            symbol=symbol,
+                            start_date=self.start_date,
+                            end_date=self.end_date,
+                            lstm_predictions=predictions,
+                            show_signals=True
+                        )
+                        fig.write_html(f"ml4t_project/exports/charts/chart_{symbol}.html")
+                        
+                        # Detaillierter Chart
+                        fig_detailed = create_chart_for_dashboard(
+                            symbol=symbol,
+                            start_date=self.start_date,
+                            end_date=self.end_date,
+                            lstm_predictions=predictions,
+                            show_signals=True,
+                            is_detailed=True
+                        )
+                        fig_detailed.write_html(f"ml4t_project/exports/charts/chart_{symbol}_detailed.html")
+                        
+                        logger.info(f"Charts für {symbol} generiert")
+                        
                     except Exception as e:
                         logger.error(f"Fehler bei LSTM-Vorhersagen für {symbol}: {str(e)}")
                     

@@ -14,8 +14,10 @@ from typing import Dict, List, Optional
 import yfinance as yf
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from plotly.subplots import make_subplots
 
 # Füge das Projektverzeichnis zum Python-Pfad hinzu
 project_root = Path(__file__).parent.parent.parent
@@ -24,23 +26,39 @@ sys.path.append(str(project_root))
 from ml4t_project.analysis.market_analyzer import MarketAnalyzer
 from ml4t_project.visualization.show_chart import create_chart_for_dashboard, save_chart_to_file
 
-class MonitoringDashboard:
+class MonitoringDashboard(dash.Dash):
     """Trading-Dashboard mit Aktienanalyse und Handelssignalen"""
     
     def __init__(self):
-        self.app = dash.Dash(
-            __name__,
-            assets_folder=os.path.join(os.getcwd(), "ml4t_project/exports")
-        )
+        """Initialisiert das Dashboard mit Standardwerten"""
+        self.logger = logging.getLogger(__name__)
+        
+        # Setze Zeitraum (2 Jahre bis heute) mit UTC
+        self.end_date = pd.Timestamp.now(tz='UTC').normalize()  # Normalisiere auf Mitternacht
+        self.start_date = (self.end_date - pd.DateOffset(years=2)).normalize()  # Normalisiere auf Mitternacht
+        
+        self.logger.info(f"Initialisiere Dashboard mit Zeitraum: {self.start_date} bis {self.end_date}")
+        
+        # Initialisiere Symbole und Layout
+        self.symbols = ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA']
+        self.current_symbol = self.symbols[0]
+        
+        # Erstelle das Dashboard
+        super().__init__(__name__)
+        
+        # Lade initiale Daten
+        self._load_data(self.current_symbol)
+        
+        self.setup_layout()
+        self._setup_callbacks()
+        
+        self.logger.info("Dashboard initialisiert")
+        
         self.log_dir = Path("logs")
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialisiere Analyzer
         self.market_analyzer = MarketAnalyzer()
-        
-        # Standard-Zeitraum für Daten
-        self.start_date = "2022-01-01"
-        self.end_date = datetime.now().strftime("%Y-%m-%d")
         
         # Logging Setup
         logging.basicConfig(
@@ -49,10 +67,9 @@ class MonitoringDashboard:
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
         
-        self.logger = logging.getLogger(__name__)
-        
+    def setup_layout(self):
         # Layout definieren
-        self.app.layout = html.Div([
+        self.layout = html.Div([
             # Header
             html.Div([
                 html.H1("ML4T Trading Dashboard", 
@@ -76,74 +93,88 @@ class MonitoringDashboard:
                 ], style={'margin': '20px'})
             ]),
             
-            # Hauptbereich - 2 Spalten Layout
+            # Hauptbereich - Charts
             html.Div([
-                # Linke Spalte - Charts
-                html.Div([
-                    # Kursverlauf
+                # Kursverlauf
                     html.Div([
                         html.H3("Kursverlauf und Signale"),
                         dcc.Graph(id='price-chart')
-                    ], style={'marginBottom': '20px'}),
-                    
-                    # LSTM-Vorhersage Chart
-                    html.Div([
-                        html.H3("LSTM-Vorhersage"),
-                        dcc.Graph(id='lstm-prediction-chart')
                     ], style={'marginBottom': '20px'}),
                     
                     # Technische Indikatoren
                     html.Div([
                         html.H3("Technische Indikatoren"),
                         dcc.Graph(id='indicators-chart')
-                    ])
-                ], style={'width': '70%', 'display': 'inline-block', 'verticalAlign': 'top'}),
-                
-                # Rechte Spalte - Analysen und Metriken
+                ], style={'marginBottom': '20px'})
+            ], style={'width': '100%', 'marginBottom': '30px'}),
+            
+            # Detaillierte LSTM-Vorhersage
+            html.Div([
+                html.H3("Detaillierte LSTM-Vorhersage"),
+                dcc.Graph(
+                    id='detailed-lstm-chart',
+                    style={'height': '800px'}
+                )
+            ], style={'width': '100%', 'marginBottom': '30px'}),
+            
+            # Analysebereich
+            html.Div([
+                # Technische Analyse
                 html.Div([
-                    # Marktanalyse
+                    html.H3("Technische Marktanalyse"),
+                    html.Pre(id='market-analysis', 
+                           style={'padding': '15px', 
+                                 'border': '1px solid #ddd', 
+                                 'whiteSpace': 'pre-wrap',
+                                 'fontFamily': 'monospace', 
+                                 'fontSize': '13px', 
+                                 'backgroundColor': '#f8f9fa',
+                                 'height': '800px',
+                                 'overflowY': 'auto',
+                                 'margin': '0'})
+                ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+                
+                # LSTM-Analyse
+                html.Div([
+                    html.H3("LSTM-Modell Analyse"),
+                    html.Pre(id='lstm-analysis', 
+                           style={'padding': '15px', 
+                                 'border': '1px solid #ddd', 
+                                 'whiteSpace': 'pre-wrap',
+                                 'fontFamily': 'monospace', 
+                                 'fontSize': '13px', 
+                                 'backgroundColor': '#f8f9fa',
+                                 'height': '800px',
+                                 'overflowY': 'auto',
+                                 'margin': '0'})
+                ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%', 'verticalAlign': 'top'})
+            ], style={'margin': '20px', 'marginBottom': '30px', 'display': 'flex', 'alignItems': 'stretch'}),
+            
+            # Metriken und Signale
                     html.Div([
-                        html.H3("Marktanalyse"),
-                        html.Pre(id='market-analysis', 
-                               style={'padding': '10px', 'border': '1px solid #ddd', 'whiteSpace': 'pre-wrap',
-                                     'fontFamily': 'monospace', 'fontSize': '14px', 'backgroundColor': '#f8f9fa',
-                                     'overflowY': 'auto', 'maxHeight': '500px'})
-                    ], style={'marginBottom': '20px'}),
-                    
                     # Performance-Metriken
                     html.Div([
                         html.H3("Performance-Metriken"),
                         html.Div(id='performance-metrics',
                                style={'padding': '10px', 'border': '1px solid #ddd'})
-                    ], style={'marginBottom': '20px'}),
+                ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top'}),
                     
                     # Handelssignale
                     html.Div([
                         html.H3("Aktuelle Handelssignale"),
                         html.Div(id='trading-signals',
                                style={'padding': '10px', 'border': '1px solid #ddd'})
-                    ]),
-                    
-                    # Detaillierte LSTM-Vorhersage
-                    html.Div([
-                        html.H3("Detaillierte LSTM-Vorhersage"),
-                        html.Iframe(
-                            id='lstm-iframe',
-                            style={'width': '100%', 'height': '300px', 'border': '1px solid #ddd'}
-                        )
-                    ], style={'marginTop': '20px'})
-                ], style={'width': '28%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
+                ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%', 'verticalAlign': 'top'})
             ], style={'margin': '20px'})
         ], style={'maxWidth': '1800px', 'margin': 'auto', 'padding': '20px'})
-        
-        self._setup_callbacks()
     
     def _setup_callbacks(self):
-        @self.app.callback(
+        @self.callback(
             [Output('price-chart', 'figure'),
              Output('indicators-chart', 'figure'),
-             Output('lstm-prediction-chart', 'figure'),
+             Output('detailed-lstm-chart', 'figure'),
              Output('market-analysis', 'children'),
+             Output('lstm-analysis', 'children'),
              Output('performance-metrics', 'children'),
              Output('trading-signals', 'children')],
             [Input('stock-selector', 'value')]
@@ -152,54 +183,59 @@ class MonitoringDashboard:
             try:
                 self.logger.info(f"Aktualisiere Charts für {symbol}")
                 
-                # Lade Daten
+                # Lade Daten mit einheitlichem Zeitraum
                 df = self._load_data(symbol)
-                if df is None or df.empty:
+                if df.empty:
                     raise ValueError(f"Keine Daten für {symbol} verfügbar")
+                
+                # Debug-Log für DataFrame
+                self.logger.info(f"DataFrame Spalten: {df.columns.tolist()}")
+                self.logger.info(f"DataFrame Index: {df.index.dtype}")
+                self.logger.info(f"Erste Zeilen des DataFrames:\n{df.head()}")
+                
+                # Berechne technische Indikatoren
+                df = self._calculate_technical_indicators(df)
                 
                 # Berechne Handelssignale
                 df = self._calculate_signals(df)
                 
-                # Erstelle Charts
+                # Erstelle Charts mit einheitlichem Zeitraum
                 price_fig = self._create_price_chart(df, symbol)
                 indicators_fig = self._create_indicators_chart(df, symbol)
                 
-                # Erstelle LSTM-Vorhersage Chart
-                lstm_fig = create_chart_for_dashboard(
+                # LSTM-Chart mit gleichem Zeitraum
+                detailed_lstm_fig = create_chart_for_dashboard(
                     symbol=symbol,
                     start_date=self.start_date,
-                    end_date=self.end_date
+                    end_date=self.end_date,
+                    show_signals=True,
+                    is_detailed=True
                 )
                 
-                # Generiere Analyse
-                analysis = self._generate_analysis(df, symbol)
-                self.logger.info(f"Analyse für {symbol} generiert")
+                # Generiere LSTM-Vorhersagen
+                lstm_predictions = self._generate_lstm_predictions(df)
+                df['LSTM_Prediction'] = np.nan
+                df.iloc[60:len(lstm_predictions)+60, df.columns.get_loc('LSTM_Prediction')] = lstm_predictions.flatten()
+                
+                # Generiere Analysen mit gleichem Zeitraum
+                market_analysis = self._generate_analysis(df)
+                lstm_analysis = self._generate_lstm_analysis(df, symbol)
                 
                 # Lade Metriken und Signale
                 metrics = self._load_metrics(symbol)
                 signals = self._load_signals(symbol)
                 
-                # Speichere detaillierten LSTM-Chart
-                try:
-                    save_chart_to_file(
-                        symbol=symbol, 
-                        start_date=self.start_date, 
-                        end_date=self.end_date
-                    )
-                except Exception as e:
-                    self.logger.error(f"Fehler beim Speichern des LSTM-Charts: {str(e)}")
-                
-                return price_fig, indicators_fig, lstm_fig, analysis, metrics, signals
+                return price_fig, indicators_fig, detailed_lstm_fig, market_analysis, lstm_analysis, metrics, signals
                 
             except Exception as e:
-                self.logger.error(f"Fehler beim Update der Charts: {str(e)}")
+                self.logger.error(f"Fehler beim Update der Charts: \n{str(e)}")
                 return self._create_error_chart(), self._create_error_chart(), \
                        self._create_error_chart(), \
                        f"Fehler bei der Marktanalyse für {symbol}: {str(e)}", \
+                       f"Fehler bei der LSTM-Analyse für {symbol}: {str(e)}", \
                        "Fehler beim Laden der Metriken", \
                        "Fehler beim Laden der Signale"
-                       
-        @self.app.callback(
+        @self.callback(
             Output('lstm-iframe', 'src'),
             [Input('stock-selector', 'value')]
         )
@@ -220,18 +256,61 @@ class MonitoringDashboard:
             # Relativen Pfad für iframe zurückgeben
             return f"/charts/chart_{symbol}.html"
     
-    def _load_data(self, symbol):
-        """Lädt die Daten für das ausgewählte Symbol"""
+    def _load_data(self, symbol: str) -> pd.DataFrame:
+        """
+        Lädt Aktiendaten für das angegebene Symbol.
+        
+        Args:
+            symbol: Das Aktiensymbol (z.B. 'AAPL')
+            
+        Returns:
+            pd.DataFrame: DataFrame mit den Aktiendaten oder leerer DataFrame bei Fehler
+        """
         try:
-            file_path = Path(f"ml4t_project/exports/data_{symbol}.csv")
-            if file_path.exists():
-                df = pd.read_csv(file_path)
-                df['Date'] = pd.to_datetime(df['Date'])
+            # Stelle sicher, dass Start- und Enddatum in UTC sind
+            start_date = self.start_date.tz_localize('UTC') if self.start_date.tz is None else self.start_date
+            end_date = self.end_date.tz_localize('UTC') if self.end_date.tz is None else self.end_date
+            
+            self.logger.info(f"Lade Daten für {symbol} von {start_date} bis {end_date}")
+            
+            # Lade Daten von yfinance mit expliziten Zeiträumen
+            df = yf.download(
+                symbol,
+                start=start_date,
+                end=end_date,
+                progress=False
+            )
+            
+            if df.empty:
+                self.logger.warning(f"Keine Daten gefunden für {symbol}")
+                return pd.DataFrame()
+            
+            # Debug-Log vor der Verarbeitung
+            self.logger.info(f"Rohdaten geladen:\nSpalten: {df.columns}\nIndex: {df.index.dtype}")
+            
+            # Entferne MultiIndex falls vorhanden
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            
+            # Stelle sicher, dass der Index im UTC-Format ist
+            df.index = pd.to_datetime(df.index, utc=True)
+            
+            # Filtere nochmal explizit nach dem Zeitraum
+            df = df[(df.index >= start_date) & (df.index <= end_date)]
+            
+            # Sortiere nach Datum
+            df = df.sort_index()
+            
+            # Debug-Log nach der Verarbeitung
+            self.logger.info(f"Verarbeitete Daten:\nSpalten: {df.columns}\nIndex: {df.index.dtype}\nErste Zeilen:\n{df.head()}")
+            
+            self.logger.info(f"Daten geladen für {symbol}: {len(df)} Einträge von {df.index.min()} bis {df.index.max()}")
+            
                 return df
-            return None
+            
         except Exception as e:
-            self.logger.error(f"Fehler beim Laden der Daten: {str(e)}")
-            return None
+            self.logger.error(f"Fehler beim Laden der Daten für {symbol}: {str(e)}")
+            return pd.DataFrame()
     
     def _calculate_signals(self, df):
         """Berechnet die Handelssignale"""
@@ -240,253 +319,355 @@ class MonitoringDashboard:
         
         for i in range(1, len(df)):
             # Kaufsignal: MA20 kreuzt MA50 nach oben und RSI < 70
-            if (df['SMA20'].iloc[i] > df['SMA50'].iloc[i] and 
-                df['SMA20'].iloc[i-1] <= df['SMA50'].iloc[i-1] and 
+            if (df['MA20'].iloc[i] > df['MA50'].iloc[i] and 
+                df['MA20'].iloc[i-1] <= df['MA50'].iloc[i-1] and 
                 df['RSI'].iloc[i] < 70):
                 df.loc[df.index[i], 'buy_signal'] = True
             
             # Verkaufssignal: MA20 kreuzt MA50 nach unten oder RSI > 70
-            elif (df['SMA20'].iloc[i] < df['SMA50'].iloc[i] and 
-                  df['SMA20'].iloc[i-1] >= df['SMA50'].iloc[i-1] or 
+            elif (df['MA20'].iloc[i] < df['MA50'].iloc[i] and 
+                  df['MA20'].iloc[i-1] >= df['MA50'].iloc[i-1] or 
                   df['RSI'].iloc[i] > 70):
                 df.loc[df.index[i], 'sell_signal'] = True
         
         return df
     
-    def _generate_analysis(self, df: pd.DataFrame, symbol: str) -> str:
-        """Generiert eine detaillierte Marktanalyse"""
+    def _generate_analysis(self, df: pd.DataFrame) -> str:
+        """
+        Generiert eine formatierte Marktanalyse basierend auf den Daten.
+        
+        Args:
+            df (pd.DataFrame): DataFrame mit den Aktiendaten
+            
+        Returns:
+            str: Formatierte Marktanalyse
+        """
         try:
-            # Grundlegende Statistiken
-            stats = {
-                'datenpunkte': len(df),
-                'zeitraum': {
-                    'start': df['Date'].iloc[0].strftime('%Y-%m-%d'),
-                    'end': df['Date'].iloc[-1].strftime('%Y-%m-%d')
-                },
-                'preisbereich': {
-                    'min': df['Low'].min(),
-                    'max': df['High'].max()
-                }
-            }
+            if df.empty:
+                return "Keine Daten verfügbar für die Analyse."
+
+            # Stelle sicher, dass alle erforderlichen Spalten vorhanden sind
+            required_columns = ['Close', 'Volume']
+            if not all(col in df.columns for col in required_columns):
+                missing_cols = [col for col in required_columns if col not in df.columns]
+                raise ValueError(f"Fehlende Spalten: {missing_cols}")
+
+            # Aktuelle Werte als float konvertieren
+            current_price = float(df['Close'].iloc[-1])
+            previous_price = float(df['Close'].iloc[-2])
+            price_change = ((current_price - previous_price) / previous_price) * 100
             
-            # Aktuelle Werte
-            current_price = df['Close'].iloc[-1]
-            current_ma20 = df['SMA20'].iloc[-1]
-            current_ma50 = df['SMA50'].iloc[-1]
-            current_rsi = df['RSI'].iloc[-1]
+            current_volume = float(df['Volume'].iloc[-1])
+            previous_volume = float(df['Volume'].iloc[-2])
+            volume_change = ((current_volume - previous_volume) / previous_volume) * 100
             
-            # Performance berechnen
-            returns = df['Close'].pct_change()
-            total_return = ((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100
-            volatility = returns.std() * np.sqrt(252) * 100
-            sharpe = (returns.mean() * 252) / (returns.std() * np.sqrt(252))
-            max_drawdown = ((df['Close'].cummax() - df['Close']) / df['Close'].cummax()).max() * 100
+            # Gleitende Durchschnitte berechnen
+            ma20 = float(df['Close'].rolling(window=20).mean().iloc[-1])
+            ma50 = float(df['Close'].rolling(window=50).mean().iloc[-1])
+            ma200 = float(df['Close'].rolling(window=200).mean().iloc[-1])
             
-            # Signale identifizieren
-            buy_signals = []
-            sell_signals = []
-            in_position = False
-            
-            for i in range(1, len(df)):
-                if df['SMA20'].iloc[i] > df['SMA50'].iloc[i] and df['SMA20'].iloc[i-1] <= df['SMA50'].iloc[i-1]:
-                    if df['RSI'].iloc[i] < 70:
-                        buy_signals.append({
-                            'datum': df['Date'].iloc[i].strftime('%Y-%m-%d'),
-                            'preis': df['Close'].iloc[i]
-                        })
-                        in_position = True
-                elif in_position and (df['SMA20'].iloc[i] < df['SMA50'].iloc[i] or df['RSI'].iloc[i] > 70):
-                    sell_signals.append({
-                        'datum': df['Date'].iloc[i].strftime('%Y-%m-%d'),
-                        'preis': df['Close'].iloc[i]
-                    })
-                    in_position = False
-            
-            # Generiere Analysebericht
+            # RSI berechnen
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = float(rs.iloc[-1])
+            rsi = 100 - (100 / (1 + rsi))
+
+            # Analyse Text generieren
             analysis = f"""
-Marktanalyse für {symbol}
+### Marktstatistik
+- Aktueller Preis: {current_price:.2f}
+- Preisänderung: {price_change:.2f}%
+- Volumenänderung: {volume_change:.2f}%
 
-1. Grundlegende Statistiken:
-   Datenpunkte: {stats['datenpunkte']} ({stats['zeitraum']['start']} bis {stats['zeitraum']['end']})
-   Preisbereich: ${stats['preisbereich']['min']:.2f} - ${stats['preisbereich']['max']:.2f}
+### Technische Indikatoren
+- MA20: {ma20:.2f}
+- MA50: {ma50:.2f}
+- MA200: {ma200:.2f}
+- RSI: {rsi:.2f}
 
-2. Performance:
-   Gesamtrendite: {total_return:.1f}%
-   Volatilität (annualisiert): {volatility:.1f}%
-   Sharpe Ratio: {sharpe:.2f}
-   Max Drawdown: {max_drawdown:.1f}%
-
-3. Handelssignale:
-   Anzahl Kaufsignale: {len(buy_signals)}
-   Anzahl Verkaufssignale: {len(sell_signals)}
-
-   Letzte Signale:"""
-            
-            # Füge die letzten 3 Signale hinzu
-            all_signals = []
-            for buy, sell in zip(buy_signals, sell_signals):
-                perf = ((sell['preis'] - buy['preis']) / buy['preis']) * 100
-                all_signals.append(f"   Signal: {buy['datum']} Kauf @${buy['preis']:.2f}, {sell['datum']} Verkauf @${sell['preis']:.2f} ({perf:+.1f}%)")
-            
-            if all_signals:
-                analysis += "\n" + "\n".join(all_signals[-3:])
-            
-            analysis += f"""
-
-4. Aktuelle Marktsituation:
-   Preis: ${current_price:.2f}
-   MA20: {current_ma20:.2f}
-   MA50: {current_ma50:.2f}
-   RSI: {current_rsi:.2f}
-   
-   Trend: {"Aufwärts" if current_ma20 > current_ma50 else "Abwärts"}
-   RSI-Status: {"Überkauft" if current_rsi > 70 else "Überverkauft" if current_rsi < 30 else "Neutral"}
-
-5. Handlungsempfehlung:"""
-            
-            # Generiere Handlungsempfehlung
-            if current_ma20 > current_ma50 and current_rsi < 70:
-                analysis += """
-   KAUFEN: Positiver Trend mit moderatem RSI
-   - MA20 über MA50 deutet auf Aufwärtstrend
-   - RSI zeigt noch keine überkaufte Situation
-   - LSTM-Vorhersage zeigt möglichen weiteren Anstieg"""
-            elif current_ma20 < current_ma50 and current_rsi > 30:
-                analysis += """
-   VERKAUFEN: Negativer Trend, kein überverkaufter RSI
-   - MA20 unter MA50 deutet auf Abwärtstrend
-   - RSI zeigt keine überverkaufte Situation
-   - LSTM-Vorhersage deutet auf mögliche Fortsetzung des Abwärtstrends"""
+### Marktbedingungen
+"""
+            # Trend Analyse
+            if current_price > ma200:
+                analysis += "- Langfristiger Aufwärtstrend\n"
             else:
-                analysis += """
-   HALTEN: Keine klaren Signale
-   - Warten auf eindeutige Trendbestätigung
-   - Beobachten der RSI-Entwicklung
-   - LSTM-Vorhersage berücksichtigen für kurzfristige Bewegungen"""
+                analysis += "- Langfristiger Abwärtstrend\n"
+
+            if current_price > ma50:
+                analysis += "- Mittelfristiger Aufwärtstrend\n"
+            else:
+                analysis += "- Mittelfristiger Abwärtstrend\n"
+
+            if current_price > ma20:
+                analysis += "- Kurzfristiger Aufwärtstrend\n"
+            else:
+                analysis += "- Kurzfristiger Abwärtstrend\n"
+
+            # RSI Interpretation
+            analysis += "\n### Handelsempfehlung\n"
+            if rsi > 70:
+                analysis += "- Überkauft (RSI > 70)\n"
+            elif rsi < 30:
+                analysis += "- Überverkauft (RSI < 30)\n"
+            else:
+                analysis += "- Neutrale RSI-Zone\n"
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"Fehler bei der Marktanalyse-Generierung: {str(e)}")
+            return "Fehler bei der Generierung der Marktanalyse."
+    
+    def _generate_lstm_analysis(self, df: pd.DataFrame, symbol: str) -> str:
+        """
+        Generiert eine formatierte LSTM-Analyse basierend auf den Vorhersagen.
+        
+        Args:
+            df (pd.DataFrame): DataFrame mit den LSTM-Vorhersagen
+            symbol (str): Das Aktiensymbol
+            
+        Returns:
+            str: Formatierte LSTM-Analysezusammenfassung
+        """
+        try:
+            # Stelle sicher, dass die erforderlichen Spalten vorhanden sind
+            required_columns = ['Close', 'LSTM_Prediction']
+            if not all(col in df.columns for col in required_columns):
+                missing_cols = [col for col in required_columns if col not in df.columns]
+                self.logger.error(f"Fehlende Spalten für LSTM-Analyse: {missing_cols}")
+                return f"Fehlende Daten für LSTM-Analyse: {', '.join(missing_cols)}"
+            
+            # Entferne NaN-Werte nur für die relevanten Spalten
+            df_clean = df[required_columns].dropna()
+            
+            if df_clean.empty:
+                return "Keine ausreichenden Daten für LSTM-Analyse verfügbar"
+            
+            # Aktuelle Werte als float konvertieren
+            current_price = float(df_clean['Close'].iloc[-1])
+            last_prediction = float(df_clean['LSTM_Prediction'].iloc[-1])
+            
+            # Berechne Vorhersage-Metriken
+            pred_change = ((last_prediction - current_price) / current_price) * 100
+            
+            # Berechne Genauigkeitsmetriken
+            close_values = df_clean['Close'].astype(float).values
+            pred_values = df_clean['LSTM_Prediction'].astype(float).values
+            
+            mse = mean_squared_error(close_values, pred_values)
+            rmse = float(np.sqrt(mse))
+            mae = float(mean_absolute_error(close_values, pred_values))
+            mape = float(np.mean(np.abs((close_values - pred_values) / close_values)) * 100)
+            
+            # Trendanalyse
+            pred_series = df_clean['LSTM_Prediction'].astype(float)
+            short_trend = pred_series.iloc[-5:].is_monotonic_increasing
+            medium_trend = pred_series.iloc[-20:].is_monotonic_increasing
+            
+            analysis = f"""
+## LSTM Vorhersage-Statistiken
+- Aktueller Preis: ${current_price:.2f}
+- Vorhergesagter Preis: ${last_prediction:.2f}
+- Prognostizierte Änderung: {pred_change:.2f}%
+
+## Modell-Metriken
+- RMSE: {rmse:.2f}
+- MAE: {mae:.2f}
+- MAPE: {mape:.2f}%
+
+## Trendanalyse
+"""
+            # Füge Trendanalyse hinzu
+            if short_trend and medium_trend:
+                analysis += "- Starker Aufwärtstrend in allen Zeitfenstern\n"
+            elif short_trend:
+                analysis += "- Kurzfristiger Aufwärtstrend erkennbar\n"
+            elif medium_trend:
+                analysis += "- Mittelfristiger Aufwärtstrend erkennbar\n"
+            else:
+                analysis += "- Kein klarer Trend erkennbar\n"
+            
+            analysis += "\n## Handelsempfehlung basierend auf LSTM\n"
+            if pred_change > 2:
+                analysis += "- Starkes Kaufsignal (>2% erwartete Rendite)\n"
+            elif pred_change > 0.5:
+                analysis += "- Moderates Kaufsignal\n"
+            elif pred_change < -2:
+                analysis += "- Starkes Verkaufssignal\n"
+            elif pred_change < -0.5:
+                analysis += "- Moderates Verkaufssignal\n"
+            else:
+                analysis += "- Neutral - Seitwärtsbewegung erwartet\n"
             
             return analysis
             
         except Exception as e:
-            self.logger.error(f"Fehler bei der Analyse-Generierung: {str(e)}")
-            raise
+            self.logger.error(f"Fehler bei der LSTM-Analyse-Generierung: {str(e)}")
+            return "Fehler bei der Generierung der LSTM-Analyse. Bitte überprüfen Sie die Logs."
     
-    def _create_price_chart(self, df, symbol):
-        """Erstellt den Kursverlauf-Chart mit Handelssignalen"""
-        try:
-            fig = go.Figure()
+    def _create_price_chart(self, df: pd.DataFrame, symbol: str) -> go.Figure:
+        """
+        Erstellt ein Candlestick-Chart mit technischen Indikatoren.
+        
+        Args:
+            df: DataFrame mit den Aktiendaten
+            symbol: Das Aktiensymbol für den Titel
             
-            # Kerzen-Chart
-            fig.add_trace(go.Candlestick(
-                x=df['Date'],
+        Returns:
+            go.Figure: Plotly Figure-Objekt mit dem Chart
+        """
+        try:
+            # Debug-Log für Eingangsdaten
+            self.logger.info(f"Erstelle Chart für {symbol}")
+            self.logger.info(f"Verfügbare Spalten: {df.columns.tolist()}")
+            self.logger.info(f"Erste Zeilen der Daten:\n{df.head()}")
+            
+            # Erstelle Figure mit Subplots
+            fig = make_subplots(
+                rows=2, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.03,
+                subplot_titles=(f'{symbol} Aktienkurs', 'Volumen'),
+                row_heights=[0.7, 0.3]
+            )
+
+            # Candlestick Chart
+            fig.add_trace(
+                go.Candlestick(
+                    x=df.index,
                 open=df['Open'],
                 high=df['High'],
                 low=df['Low'],
                 close=df['Close'],
-                name='Kurs',
-                showlegend=True
-            ))
-            
-            # Moving Averages
-            if 'SMA20' in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=df['Date'],
-                    y=df['SMA20'],
-                    name='20-Tage MA',
-                    line=dict(color='blue'),
-                    showlegend=True
-                ))
-            
-            if 'SMA50' in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=df['Date'],
-                    y=df['SMA50'],
-                    name='50-Tage MA',
-                    line=dict(color='red'),
-                    showlegend=True
-                ))
-            
-            # Kaufsignale
-            buy_signals = df[df['buy_signal']]
-            if not buy_signals.empty:
-                fig.add_trace(go.Scatter(
-                    x=buy_signals['Date'],
-                    y=buy_signals['Low'] * 0.99,
-                    mode='markers',
-                    marker=dict(
-                        symbol='triangle-up',
-                        size=15,
-                        color='green',
-                        line=dict(width=2, color='darkgreen')
-                    ),
-                    name='Kaufsignal',
-                    showlegend=True
-                ))
-            
-            # Verkaufssignale
-            sell_signals = df[df['sell_signal']]
-            if not sell_signals.empty:
-                fig.add_trace(go.Scatter(
-                    x=sell_signals['Date'],
-                    y=sell_signals['High'] * 1.01,
-                    mode='markers',
-                    marker=dict(
-                        symbol='triangle-down',
-                        size=15,
-                        color='red',
-                        line=dict(width=2, color='darkred')
-                    ),
-                    name='Verkaufssignal',
-                    showlegend=True
-                ))
-            
-            # Layout
-            fig.update_layout(
-                title=f'{symbol} Kursverlauf mit Handelssignalen',
-                yaxis_title='Preis',
-                xaxis_title='Datum',
-                height=500,
-                template='plotly_white',
-                showlegend=True,
-                legend=dict(
-                    yanchor="top",
-                    y=1.0,
-                    xanchor="left",
-                    x=1.02
-                )
+                    name='OHLC'
+                ),
+                row=1, col=1
             )
+
+            # Füge Moving Averages hinzu
+            colors = {'MA20': '#1f77b4', 'MA50': '#ff7f0e', 'MA200': '#2ca02c'}
+            for ma in ['MA20', 'MA50', 'MA200']:
+                if ma in df.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=df.index,
+                            y=df[ma],
+                            name=ma,
+                            line=dict(color=colors[ma]),
+                            opacity=0.7
+                        ),
+                        row=1, col=1
+                    )
+
+            # Volumen-Balken
+            colors = ['red' if row['Open'] > row['Close'] else 'green' for _, row in df.iterrows()]
+            fig.add_trace(
+                go.Bar(
+                    x=df.index,
+                    y=df['Volume'],
+                    name='Volume',
+                    marker_color=colors
+                ),
+                row=2, col=1
+            )
+
+            # Layout anpassen
+            fig.update_layout(
+                title=f'{symbol} Technische Analyse',
+                xaxis_title='Datum',
+                yaxis_title='Preis',
+                yaxis2_title='Volumen',
+                showlegend=True,
+                height=800,
+                xaxis_rangeslider_visible=False
+            )
+
+            # Formatierung der y-Achsen
+            fig.update_yaxes(title_text='Preis', row=1, col=1)
+            fig.update_yaxes(title_text='Volumen', row=2, col=1)
             
             return fig
             
         except Exception as e:
-            self.logger.error(f"Fehler beim Erstellen des Preis-Charts: {str(e)}")
-            return self._create_error_chart()
+            self.logger.error(f"Fehler beim Erstellen des Charts für {symbol}: {str(e)}")
+            # Erstelle leeren Chart bei Fehler
+            return go.Figure()
     
     def _create_indicators_chart(self, df, symbol):
-        """Erstellt den Indikatoren-Chart"""
+        """Erstellt den Indikatoren-Chart mit RSI
+        
+        Args:
+            df (pd.DataFrame): DataFrame mit den Kursdaten
+            symbol (str): Das Aktiensymbol
+            
+        Returns:
+            go.Figure: Plotly Figure-Objekt mit dem Chart
+        """
         try:
+            if df.empty:
+                return self._create_error_chart()
+                
+            # Stelle sicher, dass das DataFrame sortiert ist
+            df = df.sort_index()
+            
+            # Berechne RSI falls noch nicht vorhanden
+            if 'RSI' not in df.columns:
+                delta = df['Close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                df['RSI'] = 100 - (100 / (1 + rs))
+            
+            # Erstelle Figure
             fig = go.Figure()
             
             # RSI
-            if 'RSI' in df.columns:
                 fig.add_trace(go.Scatter(
-                    x=df['Date'],
+                x=df.index,
                     y=df['RSI'],
                     name='RSI',
-                    line=dict(color='purple')
+                line=dict(color='purple', width=1.5)
                 ))
                 
                 # RSI-Linien
-                fig.add_hline(y=70, line_dash="dash", line_color="red")
-                fig.add_hline(y=30, line_dash="dash", line_color="green")
+            fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Überkauft (70)")
+            fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Überverkauft (30)")
             
             # Layout
             fig.update_layout(
                 title=f'{symbol} Technische Indikatoren',
-                yaxis_title='Wert',
+                yaxis_title='RSI',
                 xaxis_title='Datum',
                 height=300,
-                template='plotly_white'
+                template='plotly_white',
+                showlegend=True,
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=0.01,
+                    bgcolor='rgba(255, 255, 255, 0.8)'
+                ),
+                margin=dict(l=50, r=50, t=50, b=50)
             )
+            
+            # Zeitachse konfigurieren
+            fig.update_xaxes(
+                rangeslider_visible=False,
+                rangeselector=dict(
+                    buttons=list([
+                        dict(count=1, label="1M", step="month", stepmode="backward"),
+                        dict(count=6, label="6M", step="month", stepmode="backward"),
+                        dict(count=1, label="1J", step="year", stepmode="backward"),
+                        dict(step="all")
+                    ])
+                )
+            )
+            
+            # Y-Achse auf RSI-Bereich beschränken
+            fig.update_yaxes(range=[0, 100])
             
             return fig
             
@@ -544,10 +725,72 @@ Marktanalyse für {symbol}
             self.logger.error(f"Fehler beim Laden der Signale: {str(e)}")
             return "Fehler beim Laden der Signale"
     
+    def _generate_lstm_predictions(self, df):
+        """Generiert LSTM-Vorhersagen"""
+        try:
+            # Implementiere die Logik zur Generierung von LSTM-Vorhersagen
+            # Dies ist nur ein Beispiel und sollte an Ihre spezifischen Anforderungen angepasst werden
+            # Hier wird eine einfache Vorhersage basierend auf der letzten Preisänderung verwendet
+            last_change = df['Close'].iloc[-1] - df['Close'].iloc[-2]
+            return np.array([df['Close'].iloc[-1] + last_change] * 60)
+        except Exception as e:
+            self.logger.error(f"Fehler beim Generieren der LSTM-Vorhersagen: {str(e)}")
+            return np.array([np.nan] * 60)
+    
+    def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Berechnet technische Indikatoren für die Analyse.
+        
+        Args:
+            df: DataFrame mit den Kursdaten
+            
+        Returns:
+            pd.DataFrame: DataFrame mit hinzugefügten technischen Indikatoren
+        """
+        try:
+            # Moving Averages
+            df['MA20'] = df['Close'].rolling(window=20).mean()
+            df['MA50'] = df['Close'].rolling(window=50).mean()
+            df['MA200'] = df['Close'].rolling(window=200).mean()
+            
+            # Relative Strength Index (RSI)
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
+            
+            # MACD
+            exp1 = df['Close'].ewm(span=12, adjust=False).mean()
+            exp2 = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = exp1 - exp2
+            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            
+            # Bollinger Bands
+            df['BB_middle'] = df['Close'].rolling(window=20).mean()
+            df['BB_upper'] = df['BB_middle'] + 2 * df['Close'].rolling(window=20).std()
+            df['BB_lower'] = df['BB_middle'] - 2 * df['Close'].rolling(window=20).std()
+            
+            # Handelssignale
+            df['buy_signal'] = False
+            df['sell_signal'] = False
+            
+            # Kaufsignal: Kurs kreuzt MA50 von unten nach oben
+            df['buy_signal'] = (df['Close'] > df['MA50']) & (df['Close'].shift(1) <= df['MA50'].shift(1))
+            
+            # Verkaufssignal: Kurs kreuzt MA50 von oben nach unten
+            df['sell_signal'] = (df['Close'] < df['MA50']) & (df['Close'].shift(1) >= df['MA50'].shift(1))
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"Fehler bei der Berechnung der technischen Indikatoren: {str(e)}")
+            return df
+    
     def run(self, debug=False, port=8050):
         """Startet das Dashboard"""
         try:
-            self.app.run(debug=debug, port=port)
+            super().run(debug=debug, port=port)
         except Exception as e:
             self.logger.error(f"Fehler beim Starten des Dashboards: {str(e)}")
 

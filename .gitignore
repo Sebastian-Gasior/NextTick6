@@ -4,6 +4,11 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.env
+.venv/
+env/
+venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -19,6 +24,70 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Logs
+logs/
+*.log
+
+# Local development settings
+.env
+.env.local
+.env.*.local
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Test Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Logs
+*.log
+
+# Lokale Konfigurationsdateien
+config.ini
+settings.json
 
 # Virtual Environment
 .venv/
@@ -46,11 +115,7 @@ data/metadata/*
 logs/
 
 # Environment variables
-.env
 .env.local
-
-# Jupyter Notebook
-.ipynb_checkpoints
 
 # OS specific
 .DS_Store
